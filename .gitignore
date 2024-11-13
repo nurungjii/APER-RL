@@ -1,0 +1,4 @@
+models/
+test/
+*.def
+.vim-arsync
