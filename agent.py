@@ -65,7 +65,7 @@ class DQNAgent:
         self.train_freq = train_freq
         self.batch_size = batch_size
 
-    def compile(self, optimizer, device, start_ep=0, num_updates=0):
+    def compile(self, optimizer, device, env_name, run_num, start_ep=0, num_updates=0):
         """Setup all of the TF graph variables/ops.
 
         This is inspired by the compile method on the
@@ -93,6 +93,8 @@ class DQNAgent:
         self.step_count = 0
         self.start_ep = start_ep
         self.num_updates = num_updates
+        self.env_name = env_name
+        self.run_num = run_num
 
     def calc_q_values(self, state):
         """Given a state (or batch of states) calculate the Q-values.
@@ -185,7 +187,7 @@ class DQNAgent:
         # Perform gradient descent with gradient clipping
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10)
+        # torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10)
         self.optimizer.step()
 
         # Maybe update target network
@@ -246,7 +248,10 @@ class DQNAgent:
             next_state, reward, done, _, _ = env.step(action)
             
             # append the latest observed state and next state
-            self.memory.add(state[-1], action, reward, next_state[-1], done)
+            self.memory.add(state, action, reward, done)
+
+            state = next_state
+
         print("Finished burning in")
 
         if self.start_ep != 0:
@@ -268,7 +273,7 @@ class DQNAgent:
                 episode_reward += reward
 
                 # append the latest observed state and next state
-                self.memory.add(state[-1], action, reward, next_state[-1], done)
+                self.memory.add(state, action, reward, done)
 
                 # Update policy every 4 steps
                 if total_steps % self.train_freq == 0 and total_steps > 0:
@@ -305,7 +310,9 @@ class DQNAgent:
 
             wandb.log({
                 "avg_loss": np.mean(episode_losses),
-                "avg_reward": np.mean(episode_rewards)
+                "avg_reward": np.mean(episode_rewards),
+                "ep_reward": episode_reward,
+                "ep_loss": episode_loss
             })
 
             # Evaluate every so often during training process
@@ -325,14 +332,14 @@ class DQNAgent:
             #     print(f"Avg Reward: {np.mean(episode_rewards):.2f}, Avg Loss: {np.mean(episode_losses):.2f}")
 
             # Checkpoint model
-            if i%5000 == 0:
+            if i%5000 == 0 and i != 0:
                 print("Checkpointing model...")
                 torch.save({
                     'epoch': self.num_updates,
                     'stop_ep_num': i,
                     'model_state_dict': self.q_network.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
-                }, f'models/ddqn_{type(self.memory)}.pth')
+                }, f'models/ddqn_{type(self.memory)}_{self.env_name}_{self.run_num}.pth')
 
     def evaluate(self, env, num_episodes, max_episode_length=None, is_training=True):
         """Test your agent with a provided environment.
@@ -363,7 +370,8 @@ class DQNAgent:
 
                 while not done:
                     # User greedy policy to pick next action
-                    state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
+                    state = np.array(state, dtype=np.float32)
+                    state = torch.from_numpy(state).unsqueeze(0).to(self.device)
                     q_values = self.calc_q_values(state)
                     action = torch.argmax(q_values).item()
 

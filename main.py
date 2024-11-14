@@ -70,8 +70,7 @@ class LinearDecayGreedyEpsilonPolicy():
             return np.random.randint(len(kwargs["q_values"]))
         else:
             return torch.argmax(kwargs["q_values"]).item()
-
-    def reset(self):
+def reset(self):
         self.epsilon = self.start_value
         self.step_count = 0
 
@@ -80,6 +79,7 @@ def main():
     parser = argparse.ArgumentParser(description='Run DQN on Atari Env')
     parser.add_argument('--env', default='CartPole-v0', help='Atari env name')
     parser.add_argument('--buffer', default='ER', help='Atari env name')
+    parser.add_argument('--run_num')
 
     args = parser.parse_args()
 
@@ -94,9 +94,9 @@ def main():
 
     dqn = DQN(observation_size, action_size).to(device) # DQN Network
     if args.buffer == 'PER': # Initalize Replay Buffer
-        memory = PrioritizedReplayBuffer(observation_size[1:], 500000, 4, device, 100000)
+        memory = PrioritizedReplayBuffer(observation_size, 500000, 4, device, 100000)
     elif args.buffer == 'ER':
-        memory = ReplayBuffer(observation_size[1:], 500000, 4, device)
+        memory = ReplayBuffer(observation_size, 500000, 4, device)
     else:
         raise RuntimeError("Unkown buffer")
     policy = LinearDecayGreedyEpsilonPolicy(1.0, 0.1, 1000000) # Define policy
@@ -105,16 +105,18 @@ def main():
     num_burn_in = 50000
     train_freq = 4
     batch_size = 32
+    lr = 0.00025
 
-    optimizer = optim.Adam(dqn.parameters(), 3e-4)
+    optimizer = optim.Adam(dqn.parameters(), lr)
+    optimizer = optim.RMSprop(dqn.parameters(), lr=lr, momentum=0.95)
 
     num_updates = 0
     last_ep = 0
 
     # Load Model if it exists and resume training from last point
-    if os.path.exists(f'models/ddqn_{type(memory)}.pth'):
+    if os.path.exists(f'models/ddqn_{type(memory)}_{args.env}_{args.run_num}.pth'):
         print("Loading existing model...")
-        checkpoint = torch.load(f'models/ddqn_{type(memory)}.pth', map_location=device)
+        checkpoint = torch.load(f'models/ddqn_{type(memory)}_{args.env}_{args.run_num}.pth', map_location=device)
         dqn.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         num_updates = checkpoint['epoch']
@@ -123,19 +125,21 @@ def main():
 
     # Define learning agent
     dqn_agent = DQNAgent(dqn, memory, policy, gamma, target_update_freq, num_burn_in, train_freq, batch_size)
-    dqn_agent.compile(optimizer, device, last_ep, num_updates)
+    dqn_agent.compile(optimizer, device, args.env, args.run_num, last_ep, num_updates)
 
     # Log results
     wandb.init(
-        project=f"ddqn-ER",
+        project="ddqn-ER",
         config = {
-            "env": f"{args.env}"
+            "env": f"{args.env}",
+            "optim": type(optimizer),
+            "lr": lr
         }
     )
 
     # Fit
     dqn_agent.fit(env, 10000000, 100000, 10000)
-    torch.save(dqn.state_dict(), f"models/ddqn_{type(memory)}.path")
+    torch.save(dqn.state_dict(), f"models/ddqn_{type(memory)}_{args.env}_{args.run_num}.pth")
 
     dqn_agent.evaluate(env, 100, 10000)
 
