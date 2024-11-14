@@ -2,17 +2,18 @@ import torch
 import numpy as np
 
 class ReplayBuffer:
-    def __init__(self,state_size, action_size, buffer_size, window_length):
-        self.state = torch.empty(buffer_size, state_size, dtype=torch.float).to('cuda')
-        self.action = torch.empty(buffer_size, action_size, dtype=torch.float).to('cuda')
-        self.reward = torch.empty(buffer_size, dtype=torch.float).to('cuda')
-        self.next_state = torch.empty(buffer_size, state_size, dtype=torch.float).to('cuda')
-        self.done = torch.empty(buffer_size, dtype=torch.int).to('cuda')
+    def __init__(self,state_size, buffer_size, window_length, device):
+        self.state = torch.empty((buffer_size, *state_size), dtype=torch.int8).to(device)
+        self.action = torch.empty(buffer_size, dtype=torch.long).to(device)
+        self.reward = torch.empty(buffer_size, dtype=torch.float).to(device)
+        self.next_state = torch.empty((buffer_size, *state_size), dtype=torch.int8).to(device)
+        self.done = torch.empty(buffer_size, dtype=torch.int).to(device)
 
         self.count = 0
         self.real_size = 0
         self.buff_size = buffer_size
         self.window_length = window_length
+        self.device = device
 
     def add(self, state, action, reward, next_state, done):
         self.state[self.count] = torch.as_tensor(state)
@@ -51,10 +52,10 @@ class ReplayBuffer:
             next_states.append(torch.stack(next_state_frames, dim=0))
 
         batch = (
-            torch.stack(states).to('cuda'),
-            self.action[sample_idxs].to('cuda'),
-            self.reward[sample_idxs].to('cuda'),
-            torch.stack(next_states).to('cuda'),
-            self.done[sample_idxs].to('cuda'),
+            torch.stack(states).to(self.device),
+            self.action[sample_idxs].unsqueeze(1).to(self.device),
+            self.reward[sample_idxs].unsqueeze(1).to(self.device),
+            torch.stack(next_states).to(self.device),
+            self.done[sample_idxs].unsqueeze(1).to(self.device),
         )
         return batch

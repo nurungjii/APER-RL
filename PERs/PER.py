@@ -4,7 +4,7 @@ import random
 from PERs.SumTree import SumTree
 
 class PrioritizedReplayBuffer():
-    def __init__(self, state_size, action_size, buffer_size, window_length, eps=1e-2, alpha=0.1, beta=0.1):
+    def __init__(self, state_size, buffer_size, window_length, device, eps=1e-2, alpha=0.1, beta=0.1):
         self.tree = SumTree(size=buffer_size)
 
         # Initialize PER params
@@ -19,16 +19,17 @@ class PrioritizedReplayBuffer():
         self.max_priority = eps
 
         # A single experience constitutes (state, action, reward, next_state, reward)
-        self.state = torch.empty(buffer_size, state_size, dtype=torch.float).to('cuda')
-        self.action = torch.empty(buffer_size, action_size, dtype=torch.float).to('cuda')
-        self.reward = torch.empty(buffer_size, dtype=torch.float).to('cuda')
-        self.next_state = torch.empty(buffer_size, state_size, dtype=torch.float).to('cuda')
-        self.done = torch.empty(buffer_size, dtype=torch.int).to('cuda')
+        self.state = torch.empty((buffer_size, *state_size), dtype=torch.int8).to(device)
+        self.action = torch.empty(buffer_size, dtype=torch.long).to(device)
+        self.reward = torch.empty(buffer_size, dtype=torch.float).to(device)
+        self.next_state = torch.empty((buffer_size, *state_size), dtype=torch.int8).to(device)
+        self.done = torch.empty(buffer_size, dtype=torch.int).to(device)
 
         self.count: int = 0
         self.real_size: int = 0
         self.buff_size: int = buffer_size
         self.window_length = window_length
+        self.device = device
 
     def add(self, state, action, reward, next_state, done):
 
@@ -89,20 +90,21 @@ class PrioritizedReplayBuffer():
             next_states.append(torch.stack(next_state_frames, dim=0))
 
         batch = (
-            torch.stack(states).to('cuda'),
-            self.action[sample_idxs].to('cuda'),
-            self.reward[sample_idxs].to('cuda'),
-            torch.stack(next_states).to('cuda'),
-            self.done[sample_idxs].to('cuda')
+            torch.stack(states).to(self.device),
+            self.action[sample_idxs].unsqueeze(1).to(self.device),
+            self.reward[sample_idxs].unsqueeze(1).to(self.device),
+            torch.stack(next_states).to(self.device),
+            self.done[sample_idxs].unsqueeze(1).to(self.device)
         )
 
-        return batch, weights, tree_idxs
+        return batch, weights.to(self.device), tree_idxs
 
     def update_priorities(self, data_idxs, priorities):
         if isinstance(priorities, torch.Tensor):
             priorities = priorities.detach().cpu().numpy()
 
         for data_idx, priority in zip(data_idxs, priorities):
+            priority = float(priority[0])
             priority = (priority + self.eps) ** self.alpha
 
             self.tree.update(data_idx, priority)

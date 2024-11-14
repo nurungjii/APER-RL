@@ -1,4 +1,7 @@
 models/
 test/
 *.def
+*.sif
 .vim-arsync
+__pycache__/
+wandb/
