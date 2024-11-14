@@ -94,7 +94,7 @@ def main():
 
     dqn = DQN(observation_size, action_size).to(device) # DQN Network
     if args.buffer == 'PER': # Initalize Replay Buffer
-        memory = PrioritizedReplayBuffer(observation_size[1:], 500000, 4, device)
+        memory = PrioritizedReplayBuffer(observation_size[1:], 500000, 4, device, 100000)
     elif args.buffer == 'ER':
         memory = ReplayBuffer(observation_size[1:], 500000, 4, device)
     else:

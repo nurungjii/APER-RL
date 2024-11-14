@@ -4,7 +4,7 @@ import random
 from PERs.SumTree import SumTree
 
 class PrioritizedReplayBuffer():
-    def __init__(self, state_size, buffer_size, window_length, device, eps=1e-2, alpha=0.1, beta=0.1):
+    def __init__(self, state_size, buffer_size, window_length, device, end_ep, eps=1e-2, alpha=0.1, beta=0.1):
         self.tree = SumTree(size=buffer_size)
 
         # Initialize PER params
@@ -15,8 +15,10 @@ class PrioritizedReplayBuffer():
         self.alpha = alpha
         # IS correction
         self.beta = beta
+        self.initial_beta = beta
         # Max priority, also priority for new samples
         self.max_priority = eps
+        self.end_ep = end_ep
 
         # A single experience constitutes (state, action, reward, next_state, reward)
         self.state = torch.empty((buffer_size, *state_size), dtype=torch.int8).to(device)
@@ -109,3 +111,6 @@ class PrioritizedReplayBuffer():
 
             self.tree.update(data_idx, priority)
             self.max_priority = max(self.max_priority, priority)
+
+    def anneal_beta(self, curr_ep):
+        self.beta = self.initial_beta + (1-self.initial_beta) * (curr_ep/self.end_ep)

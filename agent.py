@@ -282,6 +282,7 @@ class DQNAgent:
 
                         # self.memory.update_priorities(tree_idxs, td_error.cpu().numpy())
                         self.memory.update_priorities(tree_idxs, td_error)
+                        self.memory.anneal_beta(i)
                     else:
                         raise RuntimeError("Unknown buffer")
 
