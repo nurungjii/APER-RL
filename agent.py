@@ -5,47 +5,9 @@ import wandb
 
 from PERs.PER import PrioritizedReplayBuffer
 from PERs.ReplayBuffer import ReplayBuffer
-
-"""Main DQN agent."""
+from PERs.APER import AnnealedPrioritizedReplayBuffer
 
 class DQNAgent:
-    """Class implementing DQN.
-
-    This is a basic outline of the functions/parameters you will need
-    in order to implement the DQNAgnet. This is just to get you
-    started. You may need to tweak the parameters, add new ones, etc.
-
-    Feel free to change the functions and funciton parameters that the
-    class provides.
-
-    We have provided docstrings to go along with our suggested API.
-
-    Parameters
-    ----------
-    q_network:
-      Your Q-network model.
-    preprocessor: deeprl_hw2.core.Preprocessor
-      The preprocessor class. See the associated classes for more
-      details.
-    memory: deeprl_hw2.core.Memory
-      Your replay memory.
-    gamma: float
-      Discount factor.
-    target_update_freq: float
-      Frequency to update the target network. You can either provide a
-      number representing a soft target update (see utils.py) or a
-      hard target update (see utils.py and Atari paper.)
-    num_burn_in: int
-      Before you begin updating the Q-network your replay memory has
-      to be filled up with some number of samples. This number says
-      how many.
-    train_freq: int
-      How often you actually update your Q-Network. Sometimes
-      stability is improved if you collect a couple samples for your
-      replay memory, for every Q-network update that you run.
-    batch_size: int
-      How many samples in each minibatch.
-    """
     def __init__(self,
                  q_network,
                  memory,
@@ -66,22 +28,6 @@ class DQNAgent:
         self.batch_size = batch_size
 
     def compile(self, optimizer, device, env_name, run_num, start_ep=0, num_updates=0):
-        """Setup all of the TF graph variables/ops.
-
-        This is inspired by the compile method on the
-        keras.models.Model class.
-
-        This is a good place to create the target network, setup your
-        loss function and any placeholders you might need.
-        
-        You should use the mean_huber_loss function as your
-        loss_function. You can also experiment with MSE and other
-        losses.
-
-        The optimizer can be whatever class you want. We used the
-        keras.optimizers.Optimizer class. Specifically the Adam
-        optimizer.
-        """
 
         # Set cuda device
         self.device = device
@@ -90,21 +36,13 @@ class DQNAgent:
         self.target_network = copy.deepcopy(self.q_network)
         self.target_network.to(self.device)
         self.optimizer = optimizer
-        self.step_count = 0
+        self.update_count = 0
         self.start_ep = start_ep
         self.num_updates = num_updates
         self.env_name = env_name
         self.run_num = run_num
 
     def calc_q_values(self, state):
-        """Given a state (or batch of states) calculate the Q-values.
-
-        Basically run your network on these states.
-
-        Return
-        ------
-        Q-values for the state(s)
-        """
 
         self.q_network.eval()
         with torch.no_grad():
@@ -113,26 +51,6 @@ class DQNAgent:
         return q_values
 
     def select_action(self, state, **kwargs):
-        """Select the action based on the current state.
-
-        You will probably want to vary your behavior here based on
-        which stage of training your in. For example, if you're still
-        collecting random samples you might want to use a
-        UniformRandomPolicy.
-
-        If you're testing, you might want to use a GreedyEpsilonPolicy
-        with a low epsilon.
-
-        If you're training, you might want to use the
-        LinearDecayGreedyEpsilonPolicy.
-
-        This would also be a good place to call
-        process_state_for_network in your preprocessor.
-
-        Returns
-        --------
-        selected action
-        """
         # convert numpy array to tensor and of type float32
         state = np.array(state, dtype=np.float32)
         state = torch.from_numpy(state).unsqueeze(0).to(self.device)
@@ -142,20 +60,6 @@ class DQNAgent:
         return self.policy.select_action(q_values=q_values, is_training=True)
 
     def update_policy(self, batch, weights=None):
-        """Update your policy.
-
-        Behavior may differ based on what stage of training your
-        in. If you're in training mode then you should check if you
-        should update your network parameters based on the current
-        step and the value you set for train_freq.
-
-        Inside, you'll want to sample a minibatch, calculate the
-        target values, update your network, and then update your
-        target values.
-
-        You might want to return the loss and other metrics as an
-        output. They can help you monitor how training is going.
-        """
         # Sample experience
         states, actions, rewards, next_states, done = batch
 
@@ -163,6 +67,8 @@ class DQNAgent:
         states = states.type(torch.float32)
         next_states = next_states.type(torch.float32)
         done = done.type(torch.float32)
+
+        rewards = torch.clamp(rewards, min=-1, max=1)
 
         # Calculate the q values and then pick the q values corresponding to each action
         q_expected = self.q_network(states).gather(1, actions)
@@ -193,41 +99,16 @@ class DQNAgent:
         # Maybe update target network
         self.hard_target_update()
 
-        self.step_count += 1
+        self.update_count += 1
 
         return loss.item(), td_error
 
 
     def hard_target_update(self):
-        if self.step_count % self.target_update_freq == 0:
+        if self.update_count % self.target_update_freq == 0:
             self.target_network.load_state_dict(self.q_network.state_dict())
 
-    def fit(self, env, num_iterations, num_episodes, max_episode_length=None, eval_interval=5000):
-        """Fit your model to the provided environment.
-
-        Its a good idea to print out things like loss, average reward,
-        Q-values, etc to see if your agent is actually improving.
-
-        You should probably also periodically save your network
-        weights and any other useful info.
-
-        This is where you should sample actions from your network,
-        collect experience samples and add them to your replay memory,
-        and update your network parameters.
-
-        Parameters
-        ----------
-        env: gym.Env
-          This is your Atari environment. You should wrap the
-          environment using the wrap_atari_env function in the
-          utils.py
-        num_iterations: int
-          How many samples/updates to perform.
-        max_episode_length: int
-          How long a single episode should last before the agent
-          resets. Can help exploration.
-        """
-
+    def fit(self, env, num_episodes, max_steps, max_episode_length=None, eval_interval=5000):
         total_steps = 0
         episode_rewards = []
         episode_losses = []
@@ -238,6 +119,7 @@ class DQNAgent:
         # Perform burn in if necessary
         print("Burning in memory")
         while self.memory.real_size < self.num_burn_in:
+            total_steps += 1
             if self.start_ep > 0:
                 # If trained model already exists, use it to select corresponding action
                 action = self.select_action(state)
@@ -263,6 +145,9 @@ class DQNAgent:
             steps_in_episode = 0
             done = False
 
+            if total_steps > max_steps:
+                break
+
             state, _ = env.reset()
 
             while not done:
@@ -285,17 +170,19 @@ class DQNAgent:
                         loss, td_error = self.update_policy(batch, weights=weights)
                         td_error = td_error.cpu().numpy()
 
-                        # self.memory.update_priorities(tree_idxs, td_error.cpu().numpy())
+                        self.memory.update_priorities(tree_idxs, td_error)
+                        self.memory.anneal_beta(i)
+                    elif isinstance(self.memory, AnnealedPrioritizedReplayBuffer):
+                        batch, weights, tree_idxs = self.memory.sample(self.batch_size, total_steps)
+                        loss, td_error = self.update_policy(batch, weights=weights)
+                        td_error = td_error.cpu().numpy()
+
                         self.memory.update_priorities(tree_idxs, td_error)
                         self.memory.anneal_beta(i)
                     else:
                         raise RuntimeError("Unknown buffer")
 
                     episode_loss += loss if loss is not None else 0
-                    self.num_updates += 1
-
-                    if self.num_updates == num_iterations:
-                        return
 
                 state = next_state
                 steps_in_episode += 1
@@ -305,6 +192,9 @@ class DQNAgent:
                 if max_episode_length and steps_in_episode >= max_episode_length:
                     break
 
+                if total_steps > max_steps:
+                    break
+
             episode_rewards.append(episode_reward)
             episode_losses.append(episode_loss)
 
@@ -312,7 +202,8 @@ class DQNAgent:
                 "avg_loss": np.mean(episode_losses),
                 "avg_reward": np.mean(episode_rewards),
                 "ep_reward": episode_reward,
-                "ep_loss": episode_loss
+                "ep_loss": episode_loss,
+                "curr steps": total_steps
             })
 
             # Evaluate every so often during training process
@@ -342,18 +233,6 @@ class DQNAgent:
                 }, f'models/ddqn_{type(self.memory)}_{self.env_name}_{self.run_num}.pth')
 
     def evaluate(self, env, num_episodes, max_episode_length=None, is_training=True):
-        """Test your agent with a provided environment.
-        
-        You shouldn't update your network parameters here. Also if you
-        have any layers that vary in behavior between train/test time
-        (such as dropout or batch norm), you should set them to test.
-
-        Basically run your policy on the environment and collect stats
-        like cumulative reward, average episode length, etc.
-
-        You can also call the render function here if you want to
-        visually inspect your policy.
-        """
 
         self.q_network.eval()
 

@@ -49,6 +49,12 @@ class SumTree:
         data_idx = idx - self.size + 1
 
         return data_idx, self.nodes[idx], self.data[data_idx]
+    
+    def get_leaf(self, sample_idx):
+        tree_idx = (sample_idx + self.count) % self.size + (self.size - 1)
+        priority = self.nodes[tree_idx]
+
+        return tree_idx, priority, sample_idx
 
     def __repr__(self):
         return f"SumTree(nodes={self.nodes.__repr__()}, data={self.data.__repr__()})"

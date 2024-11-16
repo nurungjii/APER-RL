@@ -14,6 +14,7 @@ import wandb
 from copy import deepcopy
 from PERs.PER import PrioritizedReplayBuffer
 from PERs.ReplayBuffer import ReplayBuffer
+from PERs.APER import AnnealedPrioritizedReplayBuffer
 from agent import DQNAgent
 
 device = torch.device('cuda')
@@ -92,11 +93,15 @@ def main():
     observation_size = env.observation_space.shape
     action_size = env.action_space.n
 
+    max_steps = 50000000
+
     dqn = DQN(observation_size, action_size).to(device) # DQN Network
     if args.buffer == 'PER': # Initalize Replay Buffer
-        memory = PrioritizedReplayBuffer(observation_size, 500000, 4, device, 100000)
+        memory = PrioritizedReplayBuffer(observation_size, 500000, 4, device, max_steps)
     elif args.buffer == 'ER':
         memory = ReplayBuffer(observation_size, 500000, 4, device)
+    elif args.buffer == 'APER':
+        memory = AnnealedPrioritizedReplayBuffer(observation_size, 500000, 4, device, max_steps, 0.5, 0.1)
     else:
         raise RuntimeError("Unkown buffer")
     policy = LinearDecayGreedyEpsilonPolicy(1.0, 0.1, 1000000) # Define policy
@@ -108,7 +113,7 @@ def main():
     lr = 0.00025
 
     optimizer = optim.Adam(dqn.parameters(), lr)
-    optimizer = optim.RMSprop(dqn.parameters(), lr=lr, momentum=0.95)
+    # optimizer = optim.RMSprop(dqn.parameters(), lr=lr, momentum=0.95)
 
     num_updates = 0
     last_ep = 0
@@ -132,14 +137,17 @@ def main():
         project="ddqn-ER",
         config = {
             "env": f"{args.env}",
+            "buffer": args.buffer,
+            "run_num": args.run_num,
             "optim": type(optimizer),
             "lr": lr
         }
     )
 
     # Fit
-    dqn_agent.fit(env, 10000000, 100000, 10000)
-    torch.save(dqn.state_dict(), f"models/ddqn_{type(memory)}_{args.env}_{args.run_num}.pth")
+    dqn_agent.fit(env, 1000000, max_steps, 20000)
+    torch.save({'model_state_dict':dqn.state_dict()},
+               f"models/final_ddqn_{type(memory)}_{args.env}_{args.run_num}.pth")
 
     dqn_agent.evaluate(env, 100, 10000)
 
