@@ -5,3 +5,4 @@ test/
 .vim-arsync
 __pycache__/
 wandb/
+*.csv

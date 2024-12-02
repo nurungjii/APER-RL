@@ -88,6 +88,7 @@ class DQNAgent:
             weights = torch.ones_like(q_expected)
 
         td_error = torch.abs(q_expected - target_q_values).detach()
+        td_error = torch.clamp(td_error, min=-1.0, max=1.0)
         loss = torch.mean((q_expected - target_q_values)**2 * weights)
 
         # Perform gradient descent with gradient clipping
@@ -171,14 +172,14 @@ class DQNAgent:
                         td_error = td_error.cpu().numpy()
 
                         self.memory.update_priorities(tree_idxs, td_error)
-                        self.memory.anneal_beta(i)
+                        # self.memory.anneal_beta(i)
                     elif isinstance(self.memory, AnnealedPrioritizedReplayBuffer):
                         batch, weights, tree_idxs = self.memory.sample(self.batch_size, total_steps)
                         loss, td_error = self.update_policy(batch, weights=weights)
                         td_error = td_error.cpu().numpy()
 
                         self.memory.update_priorities(tree_idxs, td_error)
-                        self.memory.anneal_beta(i)
+                        # self.memory.anneal_beta(i)
                     else:
                         raise RuntimeError("Unknown buffer")
 

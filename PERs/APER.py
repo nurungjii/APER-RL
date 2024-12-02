@@ -116,4 +116,8 @@ class AnnealedPrioritizedReplayBuffer():
 
     def gaussian_weight(self, step):
         x = step/self.max_step
-        return math.exp(-0.5 * ((x - self.mean) / self.std) ** 2)
+        gaussian_value =  math.exp(-0.5 * ((x - self.mean) / self.std) ** 2)
+
+        if x >= self.mean:
+            return 1.0
+        return gaussian_value

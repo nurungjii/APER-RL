@@ -71,6 +71,17 @@ class LinearDecayGreedyEpsilonPolicy():
             return np.random.randint(len(kwargs["q_values"]))
         else:
             return torch.argmax(kwargs["q_values"]).item()
+
+class EpsilonGreedyPolicy():
+    def __init__(self, epsilon):
+        self.epsilon = epsilon
+
+    def select_action(self, **kwargs):
+        if np.random.rand() < self.epsilon:
+            return np.random.randint(len(kwargs["q_values"]))
+        else:
+            return torch.argmax(kwargs["q_values"]).item()
+
 def reset(self):
         self.epsilon = self.start_value
         self.step_count = 0
@@ -101,10 +112,11 @@ def main():
     elif args.buffer == 'ER':
         memory = ReplayBuffer(observation_size, 500000, 4, device)
     elif args.buffer == 'APER':
-        memory = AnnealedPrioritizedReplayBuffer(observation_size, 500000, 4, device, max_steps, 0.5, 0.1)
+        memory = AnnealedPrioritizedReplayBuffer(observation_size, 500000, 4, device, max_steps, 0.5, 0.2)
     else:
         raise RuntimeError("Unkown buffer")
     policy = LinearDecayGreedyEpsilonPolicy(1.0, 0.1, 1000000) # Define policy
+    # policy = EpsilonGreedyPolicy()
     gamma = 0.99 # gamma
     target_update_freq = 10000
     num_burn_in = 50000
